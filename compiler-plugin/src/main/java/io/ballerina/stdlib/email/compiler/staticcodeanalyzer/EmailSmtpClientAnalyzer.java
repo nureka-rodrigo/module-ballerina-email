@@ -58,32 +58,50 @@ public class EmailSmtpClientAnalyzer implements AnalysisTask<SyntaxNodeAnalysisC
         if (smtpConfigArgument.isEmpty()) {
             return;
         }
-        Optional<ExpressionNode> smtpConfigExpression = extractSmtpConfigExpressionFromFunctionBody(smtpConfigArgument.get());
-        if (smtpConfigExpression.isEmpty()) {
-            return;
-        }
-        if (smtpConfigExpression.get() instanceof MappingConstructorExpressionNode mappingConstructorExpressionNode
-                && isVulnerableSmtpConfig(mappingConstructorExpressionNode)) {
+        Optional<MappingConstructorExpressionNode> smtpConfigMapping = extractSmtpConfigMapping(context, smtpConfigArgument.get());
+        if (smtpConfigMapping.isPresent() && isVulnerableSmtpConfig(smtpConfigMapping.get())) {
             report(context, AVOID_UNVERIFIED_SERVER_HOSTNAMES.getId());
-        } else {
-            Optional<MappingConstructorExpressionNode> mappingConstructorExpressionNode =
-                    extractSmtpConfigExpressionFromFunctionBody((FunctionBodyBlockNode) context.node(),
-                            smtpConfigExpression.get());
-            if (mappingConstructorExpressionNode.isEmpty()) {
-                Node parent = context.node();
-                while (parent != null) {
-                    if (parent instanceof ModulePartNode modulePartNode) {
-                        mappingConstructorExpressionNode = extractSmtpConfigExpressionFromModulePart(modulePartNode,
-                                smtpConfigExpression.get());
-                    }
-                    parent = parent.parent();
+        }
+    }
+
+    /**
+     * Extracts the SMTP configuration mapping from the function argument node.
+     *
+     * @param context            the analysis context
+     * @param smtpConfigArgument the SMTP config argument node
+     * @return an Optional containing the MappingConstructorExpressionNode if found, otherwise empty
+     */
+    private Optional<MappingConstructorExpressionNode> extractSmtpConfigMapping(
+            SyntaxNodeAnalysisContext context, FunctionArgumentNode smtpConfigArgument) {
+        Optional<ExpressionNode> smtpConfigExpression = extractSmtpConfigExpressionFromFunctionBody(smtpConfigArgument);
+        if (smtpConfigExpression.isEmpty()) {
+            return Optional.empty();
+        }
+        ExpressionNode expr = smtpConfigExpression.get();
+        if (expr instanceof MappingConstructorExpressionNode mappingNode) {
+            return Optional.of(mappingNode);
+        }
+        // Try to resolve from function body block
+        if (context.node() instanceof FunctionBodyBlockNode functionBodyBlockNode) {
+            Optional<MappingConstructorExpressionNode> mapping =
+                    extractSmtpConfigExpressionFromFunctionBody(functionBodyBlockNode, expr);
+            if (mapping.isPresent()) {
+                return mapping;
+            }
+        }
+        // Try to resolve from module part
+        Node parent = context.node();
+        while (parent != null) {
+            if (parent instanceof ModulePartNode modulePartNode) {
+                Optional<MappingConstructorExpressionNode> mapping =
+                        extractSmtpConfigExpressionFromModulePart(modulePartNode, expr);
+                if (mapping.isPresent()) {
+                    return mapping;
                 }
             }
-            if (mappingConstructorExpressionNode.isPresent() &&
-                    isVulnerableSmtpConfig(mappingConstructorExpressionNode.get())) {
-                report(context, AVOID_UNVERIFIED_SERVER_HOSTNAMES.getId());
-            }
+            parent = parent.parent();
         }
+        return Optional.empty();
     }
 
     /**
@@ -114,8 +132,8 @@ public class EmailSmtpClientAnalyzer implements AnalysisTask<SyntaxNodeAnalysisC
     /**
      * Extracts the MappingConstructorExpressionNode for the SMTP configuration from the module part node.
      *
-     * @param modulePartNode   the module part node
-     * @param expressionNode   the expression node representing the SMTP configuration
+     * @param modulePartNode the module part node
+     * @param expressionNode the expression node representing the SMTP configuration
      * @return an Optional containing the MappingConstructorExpressionNode if found, otherwise empty
      */
     private Optional<MappingConstructorExpressionNode> extractSmtpConfigExpressionFromModulePart(
