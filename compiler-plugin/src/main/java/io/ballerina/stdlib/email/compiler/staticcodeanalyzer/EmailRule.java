@@ -18,6 +18,28 @@
 
 package io.ballerina.stdlib.email.compiler.staticcodeanalyzer;
 
-public class EmailRule {
-    // TODO: Implement the logic for the email static code analyzer rules.
+import io.ballerina.scan.Rule;
+
+import static io.ballerina.scan.RuleKind.VULNERABILITY;
+import static io.ballerina.stdlib.email.compiler.staticcodeanalyzer.RuleFactory.createRule;
+
+public enum EmailRule {
+    AVOID_UNVERIFIED_SERVER_HOSTNAMES(createRule(1,
+            "Avoid unverified server hostnames during SSL/TLS connections", VULNERABILITY));
+
+    private final Rule rule;
+
+    EmailRule(Rule rule) {
+        this.rule = rule;
+    }
+
+    public int getId() {
+        return this.rule.numericId();
+    }
+
+    @Override
+    public String toString() {
+        return "{\"id\":" + this.getId() + ", \"kind\":\"" + this.rule.kind() + "\"," +
+                " \"description\" : \"" + this.rule.description() + "\"}";
+    }
 }
