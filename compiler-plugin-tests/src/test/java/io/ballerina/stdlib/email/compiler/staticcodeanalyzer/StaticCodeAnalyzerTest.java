@@ -69,26 +69,45 @@ public class StaticCodeAnalyzerTest {
     public void testStaticCodeRulesWithAPI() throws IOException {
         ByteArrayOutputStream console = new ByteArrayOutputStream();
         PrintStream printStream = new PrintStream(console, true, UTF_8);
+
         for (EmailRule rule : EmailRule.values()) {
-            String targetPackageName = "rule" + rule.getId();
-            Path targetPackagePath = RESOURCE_PACKAGES_DIRECTORY.resolve(targetPackageName);
-            Project project = BuildProject.load(getEnvironmentBuilder(), targetPackagePath);
-            TestOptions options = TestOptions.builder(project).setOutputStream(printStream).build();
-            TestRunner testRunner = new TestRunner(options);
-            testRunner.performScan();
+            testIndividualRule(rule, console, printStream);
+        }
+    }
 
-            // validate the rules
-            List<Rule> rules = testRunner.getRules();
-            Assertions.assertRule(
-                    rules,
-                    "ballerina/email:1",
-                    "Avoid unverified server hostnames during SSL/TLS connections",
-                    VULNERABILITY);
+    private void testIndividualRule(EmailRule rule, ByteArrayOutputStream console, PrintStream printStream)
+            throws IOException {
+        String targetPackageName = "rule" + rule.getId();
+        Path targetPackagePath = RESOURCE_PACKAGES_DIRECTORY.resolve(targetPackageName);
 
-            // validate the issues
-            List<Issue> issues = testRunner.getIssues();
-            int index = 0;
-            if (rule == AVOID_UNVERIFIED_SERVER_HOSTNAMES) {
+        TestRunner testRunner = setupTestRunner(targetPackagePath, printStream);
+        testRunner.performScan();
+
+        validateRules(testRunner.getRules());
+        validateIssues(rule, testRunner.getIssues());
+        validateOutput(console, targetPackageName);
+
+        console.reset();
+    }
+
+    private TestRunner setupTestRunner(Path targetPackagePath, PrintStream printStream) {
+        Project project = BuildProject.load(getEnvironmentBuilder(), targetPackagePath);
+        TestOptions options = TestOptions.builder(project).setOutputStream(printStream).build();
+        return new TestRunner(options);
+    }
+
+    private void validateRules(List<Rule> rules) {
+        Assertions.assertRule(
+                rules,
+                "ballerina/email:1",
+                AVOID_UNVERIFIED_SERVER_HOSTNAMES.getDescription(),
+                VULNERABILITY);
+    }
+
+    private void validateIssues(EmailRule rule, List<Issue> issues) {
+        switch (rule) {
+            case AVOID_UNVERIFIED_SERVER_HOSTNAMES:
+                int index = 0;
                 Assert.assertEquals(issues.size(), 18);
                 Assertions.assertIssue(issues, index++, "ballerina/email:1", "imap_fun_named_arg.bal",
                         18, 33, Source.BUILT_IN);
@@ -126,15 +145,18 @@ public class StaticCodeAnalyzerTest {
                         31, 33, Source.BUILT_IN);
                 Assertions.assertIssue(issues, index, "ballerina/email:1", "smtp_mod_pos_arg.bal",
                         31, 33, Source.BUILT_IN);
-            }
-
-            // validate the output
-            String output = console.toString(UTF_8);
-            String jsonOutput = extractJson(output);
-            String expectedOutput = Files.readString(EXPECTED_OUTPUT_DIRECTORY.resolve(targetPackageName + ".json"));
-            assertJsonEqual(jsonOutput, expectedOutput);
-            console.reset();
+                break;
+            default:
+                Assert.fail("Unhandled rule in validateIssues: " + rule);
+                break;
         }
+    }
+
+    private void validateOutput(ByteArrayOutputStream console, String targetPackageName) throws IOException {
+        String output = console.toString(UTF_8);
+        String jsonOutput = extractJson(output);
+        String expectedOutput = Files.readString(EXPECTED_OUTPUT_DIRECTORY.resolve(targetPackageName + ".json"));
+        assertJsonEqual(jsonOutput, expectedOutput);
     }
 
     private static ProjectEnvironmentBuilder getEnvironmentBuilder() {
